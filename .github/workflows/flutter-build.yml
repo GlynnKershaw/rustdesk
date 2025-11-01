@@ -790,10 +790,13 @@ jobs:
       #   with:
       #     name: rustdesk-unsigned-windows-x86
       #     path: ./windows-x86/
-
-      - name: Combine unsigned app
+      - name: Combine unsigned app (Windows only)
         run: |
-          tar czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz windows-x86_64
+          set -eux
+          mkdir -p unsigned/rustdesk-windows-x86_64
+          rsync -a windows-x86_64/ unsigned/rustdesk-windows-x86_64/
+          tar -czf rustdesk-${{ env.VERSION }}-unsigned.tar.gz -C unsigned rustdesk-windows-x86_64
+
 
       - name: Publish unsigned app
         uses: softprops/action-gh-release@v1
