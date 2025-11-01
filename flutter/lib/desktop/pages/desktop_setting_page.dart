@@ -1517,15 +1517,6 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
     ]).marginOnly(bottom: _kListViewBottomMargin);
   }
 
-  Widget network(BuildContext context) {
-    final hideServer = true;
-    final hideProxy =
-        isWeb || bind.mainGetBuildinOption(key: kOptionHideProxySetting) == 'Y';
-    final hideWebSocket = true;
-
-    if (hideServer && hideProxy && hideWebSocket) {
-      return Offstage();
-    }
 
     // Helper function to create network setting ListTiles
     Widget listTile({
