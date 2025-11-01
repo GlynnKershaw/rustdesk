@@ -786,7 +786,7 @@ jobs:
           path: ./windows-x86_64/
 
       - name: Download Artifacts
-        uses: actions/download-artifact@master
+        uses: actions/download-artifact@v4
         with:
           name: rustdesk-unsigned-windows-x86
           path: ./windows-x86/
