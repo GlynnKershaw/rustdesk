@@ -1574,7 +1574,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
       );
     }
   }
-}
+
 
 class _Display extends StatefulWidget {
   const _Display({Key? key}) : super(key: key);
