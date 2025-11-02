@@ -1573,51 +1573,6 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
         horizontalTitleGap: 10,
       );
     }
-
-    return _Card(
-      title: 'Network',
-      children: [
-        Container(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!hideServer)
-                listTile(
-                  icon: Icons.dns_outlined,
-                  title: 'ID/Relay Server',
-                  onTap: () => showServerSettings(gFFI.dialogManager),
-                ),
-              if (!hideServer && (!hideProxy || !hideWebSocket))
-                Divider(height: 1, indent: 16, endIndent: 16),
-              if (!hideProxy)
-                listTile(
-                  icon: Icons.network_ping_outlined,
-                  title: 'Socks5/Http(s) Proxy',
-                  onTap: changeSocks5Proxy,
-                ),
-              if (!hideProxy && !hideWebSocket)
-                Divider(height: 1, indent: 16, endIndent: 16),
-              if (!hideWebSocket)
-                listTile(
-                  icon: Icons.web_asset_outlined,
-                  title: 'Use WebSocket',
-                  showTooltip: true,
-                  tooltipMessage: 'websocket_tip',
-                  trailing: Switch(
-                    value: mainGetBoolOptionSync(kOptionAllowWebSocket),
-                    onChanged: locked
-                        ? null
-                        : (value) {
-                            mainSetBoolOption(kOptionAllowWebSocket, value);
-                            setState(() {});
-                          },
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
   }
 }
 
