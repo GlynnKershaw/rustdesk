@@ -1530,8 +1530,6 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
         horizontalTitleGap: 10,
       );
     }
-  }
-
 
 class _Display extends StatefulWidget {
   const _Display({Key? key}) : super(key: key);
