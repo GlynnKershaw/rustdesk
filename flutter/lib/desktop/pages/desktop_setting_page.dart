@@ -52,7 +52,6 @@ class _TabInfo {
 enum SettingsTabKey {
   general,
   safety,
-  network,
   display,
   plugin,
   account,
@@ -69,9 +68,6 @@ class DesktopSettingPage extends StatefulWidget {
         !bind.isDisableSettings() &&
         bind.mainGetBuildinOption(key: kOptionHideSecuritySetting) != 'Y')
       SettingsTabKey.safety,
-    if (!bind.isDisableSettings() &&
-        bind.mainGetBuildinOption(key: kOptionHideNetworkSetting) != 'Y')
-      SettingsTabKey.network,
     if (!bind.isIncomingOnly()) SettingsTabKey.display,
     if (!isWeb && !bind.isIncomingOnly() && bind.pluginFeatureIsEnabled())
       SettingsTabKey.plugin,
@@ -187,10 +183,6 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
           settingTabs.add(_TabInfo(tab, 'Security',
               Icons.enhanced_encryption_outlined, Icons.enhanced_encryption));
           break;
-        case SettingsTabKey.network:
-          settingTabs
-              .add(_TabInfo(tab, 'Network', Icons.link_outlined, Icons.link));
-          break;
         case SettingsTabKey.display:
           settingTabs.add(_TabInfo(tab, 'Display',
               Icons.desktop_windows_outlined, Icons.desktop_windows));
@@ -225,9 +217,6 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
           break;
         case SettingsTabKey.safety:
           children.add(const _Safety());
-          break;
-        case SettingsTabKey.network:
-          children.add(const _Network());
           break;
         case SettingsTabKey.display:
           children.add(const _Display());
@@ -1485,38 +1474,6 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
     ).marginOnly(left: _kCheckBoxLeftMargin);
   }
 }
-
-class _Network extends StatefulWidget {
-  const _Network({Key? key}) : super(key: key);
-
-  @override
-  State<_Network> createState() => _NetworkState();
-}
-
-class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
-  @override
-  bool get wantKeepAlive => true;
-  bool locked = !isWeb && bind.mainIsInstalled();
-
-  final scrollController = ScrollController();
-
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
-    return ListView(controller: scrollController, children: [
-      _lock(locked, 'Unlock Network Settings', () {
-        locked = false;
-        setState(() => {});
-      }),
-      preventMouseKeyBuilder(
-        block: locked,
-        child: Column(children: [
-          network(context),
-        ]),
-      ),
-    ]).marginOnly(bottom: _kListViewBottomMargin);
-  }
-
 
     // Helper function to create network setting ListTiles
     Widget listTile({
