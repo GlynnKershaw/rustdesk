@@ -2066,10 +2066,6 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('Build Date')}: $buildDate')
                       .marginSymmetric(vertical: 4.0)),
-              if (!isWeb)
-                SelectionArea(
-                    child: Text('${translate('Fingerprint')}: $fingerprint')
-                        .marginSymmetric(vertical: 4.0)),
             ],
           ).marginOnly(left: _kContentHMargin)
         ]),
