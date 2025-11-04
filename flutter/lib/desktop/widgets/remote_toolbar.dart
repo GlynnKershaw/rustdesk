@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -233,7 +234,11 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   final _fractionX = 0.5.obs;
   final _dragging = false.obs;
   // Controls visibility of the draggable toggle when toolbar is collapsed.
-  final RxBool _handleVisible = true.obs;
+  // Start hidden; reveal only after intentional dwell in hot zone.
+  final RxBool _handleVisible = false.obs;
+  // Track if pointer is dwelling in the top-edge hot zone centered on screen.
+  bool _inHotZone = false;
+  Timer? _revealTimer;
 
   int get windowId => stateGlobal.windowId;
 
@@ -278,15 +283,13 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         _isCursorOverImage = true;
       } else {
         _isCursorOverImage = false;
-        // When cursor leaves the remote image area, reveal the handle again
-        // so users can bring back the toolbar if needed.
-        _handleVisible.value = true;
+        // Do not auto-show handle; require user to hover the hot zone to reveal.
       }
     });
   }
 
   _debouncerHideProc(int v) {
-    if (!pin && _isCursorOverImage && _dragging.isFalse) {
+    if (!pin && _isCursorOverImage && _dragging.isFalse && !_inHotZone) {
       // Hide the expanded toolbar if shown.
       if (show.isTrue) {
         show.value = false;
@@ -298,6 +301,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   @override
   dispose() {
+    _revealTimer?.cancel();
     super.dispose();
 
     widget.onEnterOrLeaveImageCleaner(identityHashCode(this));
@@ -309,7 +313,8 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     final width = (_toolbarContentWidth == null || _toolbarContentWidth! <= 0)
         ? mediaSize.width
         : _toolbarContentWidth!;
-    const double _hotZoneHeight = 10.0;
+    const double _hotZoneHeight = 32.0; // Approx Windows RDP bar height
+    final double _hotZoneWidth = math.min(width, 400.0); // small centered band
     return Align(
       alignment: Alignment.topCenter,
       child: Stack(
@@ -318,17 +323,27 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
           // Transparent hot zone centered at top edge. Hovering it reveals the handle.
           Center(
             child: SizedBox(
-              width: width,
+              width: _hotZoneWidth,
               height: _hotZoneHeight,
               child: MouseRegion(
                 opaque: false,
                 onEnter: (_) {
-                  _handleVisible.value = true;
+                  _inHotZone = true;
+                  // Start delayed reveal if not already running
+                  _revealTimer?.cancel();
+                  _revealTimer = Timer(const Duration(seconds: 5), () {
+                    if (!mounted) return;
+                    if (_inHotZone) {
+                      _handleVisible.value = true;
+                    }
+                  });
                 },
                 onHover: (_) {
-                  _handleVisible.value = true;
+                  // Keep dwelling; no immediate reveal
                 },
                 onExit: (_) {
+                  _inHotZone = false;
+                  _revealTimer?.cancel();
                   // Start auto-hide timer when leaving the hot zone.
                   triggerAutoHide();
                 },
