@@ -224,6 +224,10 @@ class RemoteToolbar extends StatefulWidget {
 }
 
 class _RemoteToolbarState extends State<RemoteToolbar> {
+  // Track toolbar content width so the draggable handle can be constrained
+  // to slide only along the toolbar bar instead of the full window width.
+  final GlobalKey _toolbarRowKey = GlobalKey();
+  double? _toolbarContentWidth;
   late Debouncer<int> _debouncerHide;
   bool _isCursorOverImage = false;
   final _fractionX = 0.5.obs;
@@ -295,11 +299,11 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       alignment: Alignment.topCenter,
       child: Obx(() => show.value
           ? _buildToolbar(context)
-          : _buildDraggableShowHide(context)),
+          : _buildDraggableShowHide(context, limitWidth: _toolbarContentWidth)),
     );
   }
 
-  Widget _buildDraggableShowHide(BuildContext context) {
+  Widget _buildDraggableShowHide(BuildContext context, {double? limitWidth}) {
     return Obx(() {
       if (show.isTrue && _dragging.isFalse) {
         triggerAutoHide();
@@ -307,23 +311,33 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       final borderRadius = BorderRadius.vertical(
         bottom: Radius.circular(5),
       );
-      return Align(
-        alignment: FractionalOffset(_fractionX.value, 0),
-        child: Offstage(
-          offstage: _dragging.isTrue,
-          child: Material(
-            elevation: _ToolbarTheme.elevation,
-            shadowColor: MyTheme.color(context).shadow,
-            borderRadius: borderRadius,
-            child: _DraggableShowHide(
-              id: widget.id,
-              sessionId: widget.ffi.sessionId,
-              dragging: _dragging,
-              fractionX: _fractionX,
-              toolbarState: widget.state,
-              setFullscreen: _setFullscreen,
-              setMinimize: _minimize,
-              borderRadius: borderRadius,
+      final mediaSize = MediaQueryData.fromView(View.of(context)).size;
+      final width = (limitWidth == null || limitWidth <= 0)
+          ? mediaSize.width
+          : limitWidth;
+      return Center(
+        child: SizedBox(
+          width: width,
+          child: Align(
+            alignment: FractionalOffset(_fractionX.value, 0),
+            child: Offstage(
+              offstage: _dragging.isTrue,
+              child: Material(
+                elevation: _ToolbarTheme.elevation,
+                shadowColor: MyTheme.color(context).shadow,
+                borderRadius: borderRadius,
+                child: _DraggableShowHide(
+                  id: widget.id,
+                  sessionId: widget.ffi.sessionId,
+                  dragging: _dragging,
+                  fractionX: _fractionX,
+                  toolbarState: widget.state,
+                  setFullscreen: _setFullscreen,
+                  setMinimize: _minimize,
+                  borderRadius: borderRadius,
+                  limitWidth: width,
+                ),
+              ),
             ),
           ),
         ),
@@ -369,6 +383,22 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     if (!isWeb) toolbarItems.add(_RecordMenu());
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
+    // After this frame, measure toolbar width for anchoring the draggable handle.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final ctx = _toolbarRowKey.currentContext;
+      if (ctx != null) {
+        final renderObj = ctx.findRenderObject();
+        if (renderObj is RenderBox) {
+          final w = renderObj.size.width;
+          if (_toolbarContentWidth == null ||
+              (_toolbarContentWidth! - w).abs() > 0.5) {
+            if (mounted) {
+              setState(() => _toolbarContentWidth = w);
+            }
+          }
+        }
+      }
+    });
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -387,18 +417,21 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               data: themeData(),
               child: _ToolbarTheme.borderWrapper(
                   context,
-                  Row(
-                    children: [
-                      SizedBox(width: _ToolbarTheme.buttonHMargin * 2),
-                      ...toolbarItems,
-                      SizedBox(width: _ToolbarTheme.buttonHMargin * 2)
-                    ],
+                  KeyedSubtree(
+                    key: _toolbarRowKey,
+                    child: Row(
+                      children: [
+                        SizedBox(width: _ToolbarTheme.buttonHMargin * 2),
+                        ...toolbarItems,
+                        SizedBox(width: _ToolbarTheme.buttonHMargin * 2)
+                      ],
+                    ),
                   ),
                   toolbarBorderRadius),
             ),
           ),
         ),
-        _buildDraggableShowHide(context),
+        _buildDraggableShowHide(context, limitWidth: _toolbarContentWidth),
       ],
     );
   }
@@ -2413,6 +2446,8 @@ class _DraggableShowHide extends StatefulWidget {
   final RxBool dragging;
   final ToolbarState toolbarState;
   final BorderRadius borderRadius;
+  // Optional width constraint to restrict horizontal movement within toolbar.
+  final double? limitWidth;
 
   final Function(bool) setFullscreen;
   final Function() setMinimize;
@@ -2427,6 +2462,7 @@ class _DraggableShowHide extends StatefulWidget {
     required this.setFullscreen,
     required this.setMinimize,
     required this.borderRadius,
+    this.limitWidth,
   }) : super(key: key);
 
   @override
@@ -2483,8 +2519,13 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
       }),
       onDragEnd: (details) {
         final mediaSize = MediaQueryData.fromView(View.of(context)).size;
-        widget.fractionX.value +=
-            (details.offset.dx - position.dx) / (mediaSize.width - size.width);
+        final containerWidth = (widget.limitWidth == null || widget.limitWidth! <= 0)
+            ? mediaSize.width
+            : widget.limitWidth!;
+        final denom = (containerWidth - size.width);
+        if (denom != 0) {
+          widget.fractionX.value += (details.offset.dx - position.dx) / denom;
+        }
         if (widget.fractionX.value < left) {
           widget.fractionX.value = left;
         }
