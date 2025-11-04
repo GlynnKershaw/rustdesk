@@ -232,6 +232,8 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   bool _isCursorOverImage = false;
   final _fractionX = 0.5.obs;
   final _dragging = false.obs;
+  // Controls visibility of the draggable toggle when toolbar is collapsed.
+  final RxBool _handleVisible = true.obs;
 
   int get windowId => stateGlobal.windowId;
 
@@ -276,13 +278,21 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         _isCursorOverImage = true;
       } else {
         _isCursorOverImage = false;
+        // When cursor leaves the remote image area, reveal the handle again
+        // so users can bring back the toolbar if needed.
+        _handleVisible.value = true;
       }
     });
   }
 
   _debouncerHideProc(int v) {
-    if (!pin && show.isTrue && _isCursorOverImage && _dragging.isFalse) {
-      show.value = false;
+    if (!pin && _isCursorOverImage && _dragging.isFalse) {
+      // Hide the expanded toolbar if shown.
+      if (show.isTrue) {
+        show.value = false;
+      }
+      // Hide the handle as well while controlling remote screen.
+      _handleVisible.value = false;
     }
   }
 
@@ -295,11 +305,42 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaSize = MediaQueryData.fromView(View.of(context)).size;
+    final width = (_toolbarContentWidth == null || _toolbarContentWidth! <= 0)
+        ? mediaSize.width
+        : _toolbarContentWidth!;
+    const double _hotZoneHeight = 10.0;
     return Align(
       alignment: Alignment.topCenter,
-      child: Obx(() => show.value
-          ? _buildToolbar(context)
-          : _buildDraggableShowHide(context, limitWidth: _toolbarContentWidth)),
+      child: Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          // Transparent hot zone centered at top edge. Hovering it reveals the handle.
+          Center(
+            child: SizedBox(
+              width: width,
+              height: _hotZoneHeight,
+              child: MouseRegion(
+                opaque: false,
+                onEnter: (_) {
+                  _handleVisible.value = true;
+                },
+                onHover: (_) {
+                  _handleVisible.value = true;
+                },
+                onExit: (_) {
+                  // Start auto-hide timer when leaving the hot zone.
+                  triggerAutoHide();
+                },
+                child: const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          Obx(() => show.value
+              ? _buildToolbar(context)
+              : _buildDraggableShowHide(context, limitWidth: width)),
+        ],
+      ),
     );
   }
 
@@ -321,7 +362,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
           child: Align(
             alignment: FractionalOffset(_fractionX.value, 0),
             child: Offstage(
-              offstage: _dragging.isTrue,
+              offstage: _dragging.isTrue || _handleVisible.isFalse,
               child: Material(
                 elevation: _ToolbarTheme.elevation,
                 shadowColor: MyTheme.color(context).shadow,
