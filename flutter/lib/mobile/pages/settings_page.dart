@@ -90,7 +90,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
   var _autoDisconnectTimeout = "";
   var _hideServer = true;
   var _hideProxy = false;
-  var _hideNetwork = false;
+  var _hideNetwork = true
   var _hideWebSocket = true;
   var _enableTrustedDevices = false;
   var _enableUdpPunch = false;
