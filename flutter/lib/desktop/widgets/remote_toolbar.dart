@@ -231,14 +231,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   double? _toolbarContentWidth;
   late Debouncer<int> _debouncerHide;
   bool _isCursorOverImage = false;
-  final _fractionX = 0.5.obs;
-  final _dragging = false.obs;
-  // Controls visibility of the draggable toggle when toolbar is collapsed.
-  // Start hidden; reveal only after intentional dwell in hot zone.
-  final RxBool _handleVisible = false.obs;
   // Track if pointer is dwelling in the top-edge hot zone centered on screen.
   bool _inHotZone = false;
-  Timer? _revealTimer;
+  Timer? _hotZoneTimer;
 
   int get windowId => stateGlobal.windowId;
 
@@ -263,14 +258,6 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _fractionX.value = double.tryParse(await bind.sessionGetOption(
-                  sessionId: widget.ffi.sessionId,
-                  arg: 'remote-menubar-drag-x') ??
-              '0.5') ??
-          0.5;
-    });
-
     _debouncerHide = Debouncer<int>(
       Duration(milliseconds: 5000),
       onChanged: _debouncerHideProc,
@@ -289,19 +276,17 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   }
 
   _debouncerHideProc(int v) {
-    if (!pin && _isCursorOverImage && _dragging.isFalse && !_inHotZone) {
+    if (!pin && _isCursorOverImage && !_inHotZone) {
       // Hide the expanded toolbar if shown.
       if (show.isTrue) {
         show.value = false;
       }
-      // Hide the handle as well while controlling remote screen.
-      _handleVisible.value = false;
     }
   }
 
   @override
   dispose() {
-    _revealTimer?.cancel();
+    _hotZoneTimer?.cancel();
     super.dispose();
 
     widget.onEnterOrLeaveImageCleaner(identityHashCode(this));
@@ -315,6 +300,10 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         : _toolbarContentWidth!;
     const double _hotZoneHeight = 32.0; // Approx Windows RDP bar height
     final double _hotZoneWidth = math.min(width, 400.0); // small centered band
+    if (show.isTrue) {
+      // Restart auto-hide countdown whenever the toolbar is visible.
+      triggerAutoHide();
+    }
     return Align(
       alignment: Alignment.topCenter,
       child: Stack(
@@ -329,12 +318,13 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
                 opaque: false,
                 onEnter: (_) {
                   _inHotZone = true;
-                  // Start delayed reveal if not already running
-                  _revealTimer?.cancel();
-                  _revealTimer = Timer(const Duration(seconds: 5), () {
+                  // Auto expand toolbar after a brief dwell in the hot zone.
+                  _hotZoneTimer?.cancel();
+                  _hotZoneTimer =
+                      Timer(const Duration(milliseconds: 600), () {
                     if (!mounted) return;
                     if (_inHotZone) {
-                      _handleVisible.value = true;
+                      widget.state.show.value = true;
                     }
                   });
                 },
@@ -343,7 +333,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
                 },
                 onExit: (_) {
                   _inHotZone = false;
-                  _revealTimer?.cancel();
+                  _hotZoneTimer?.cancel();
                   // Start auto-hide timer when leaving the hot zone.
                   triggerAutoHide();
                 },
@@ -351,54 +341,10 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               ),
             ),
           ),
-          Obx(() => show.value
-              ? _buildToolbar(context)
-              : _buildDraggableShowHide(context, limitWidth: width)),
+          Obx(() => show.value ? _buildToolbar(context) : const SizedBox()),
         ],
       ),
     );
-  }
-
-  Widget _buildDraggableShowHide(BuildContext context, {double? limitWidth}) {
-    return Obx(() {
-      if (show.isTrue && _dragging.isFalse) {
-        triggerAutoHide();
-      }
-      final borderRadius = BorderRadius.vertical(
-        bottom: Radius.circular(5),
-      );
-      final mediaSize = MediaQueryData.fromView(View.of(context)).size;
-      final width = (limitWidth == null || limitWidth <= 0)
-          ? mediaSize.width
-          : limitWidth;
-      return Center(
-        child: SizedBox(
-          width: width,
-          child: Align(
-            alignment: FractionalOffset(_fractionX.value, 0),
-            child: Offstage(
-              offstage: _dragging.isTrue || _handleVisible.isFalse,
-              child: Material(
-                elevation: _ToolbarTheme.elevation,
-                shadowColor: MyTheme.color(context).shadow,
-                borderRadius: borderRadius,
-                child: _DraggableShowHide(
-                  id: widget.id,
-                  sessionId: widget.ffi.sessionId,
-                  dragging: _dragging,
-                  fractionX: _fractionX,
-                  toolbarState: widget.state,
-                  setFullscreen: _setFullscreen,
-                  setMinimize: _minimize,
-                  borderRadius: borderRadius,
-                  limitWidth: width,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    });
   }
 
   Widget _buildToolbar(BuildContext context) {
@@ -438,6 +384,12 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     }
     if (!isWeb) toolbarItems.add(_RecordMenu());
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
+    toolbarItems.add(_WindowControlButtons(
+      sessionId: widget.ffi.sessionId,
+      state: widget.state,
+      setFullscreen: _setFullscreen,
+      setMinimize: _minimize,
+    ));
     final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
     // After this frame, measure toolbar width for anchoring the draggable handle.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -487,7 +439,6 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
             ),
           ),
         ),
-        _buildDraggableShowHide(context, limitWidth: _toolbarContentWidth),
       ],
     );
   }
@@ -2219,6 +2170,76 @@ class _CloseMenu extends StatelessWidget {
   }
 }
 
+class _WindowControlButtons extends StatelessWidget {
+  final SessionID sessionId;
+  final ToolbarState state;
+  final Function(bool) setFullscreen;
+  final VoidCallback setMinimize;
+  const _WindowControlButtons({
+    Key? key,
+    required this.sessionId,
+    required this.state,
+    required this.setFullscreen,
+    required this.setMinimize,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final buttons = <Widget>[
+      Obx(() => _IconMenuButton(
+            icon: Icon(
+              stateGlobal.fullscreen.isTrue
+                  ? Icons.fullscreen_exit
+                  : Icons.fullscreen,
+              color: Colors.white,
+              size: 20,
+            ),
+            tooltip:
+                stateGlobal.fullscreen.isTrue ? 'Exit Fullscreen' : 'Fullscreen',
+            color: _ToolbarTheme.blueColor,
+            hoverColor: _ToolbarTheme.hoverBlueColor,
+            onPressed: () => setFullscreen(!stateGlobal.fullscreen.value),
+          )),
+      if (!isMacOS && !isWebDesktop)
+        _IconMenuButton(
+          icon: const Icon(Icons.remove, color: Colors.white, size: 20),
+          tooltip: 'Minimize',
+          color: _ToolbarTheme.inactiveColor,
+          hoverColor: _ToolbarTheme.hoverInactiveColor,
+          onPressed: setMinimize,
+        ),
+      _CollapseMenu(state: state, sessionId: sessionId),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: buttons,
+    );
+  }
+}
+
+class _CollapseMenu extends StatelessWidget {
+  final ToolbarState state;
+  final SessionID sessionId;
+  const _CollapseMenu({Key? key, required this.state, required this.sessionId})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() => _IconMenuButton(
+          icon: Icon(
+            Icons.expand_less,
+            color: Colors.white,
+            size: 20,
+          ),
+          tooltip: state.show.isTrue ? 'Hide Toolbar' : 'Show Toolbar',
+          color: _ToolbarTheme.inactiveColor,
+          hoverColor: _ToolbarTheme.hoverInactiveColor,
+          onPressed: () => state.switchShow(sessionId),
+        ));
+  }
+}
+
 class _IconMenuButton extends StatefulWidget {
   final String? assetName;
   final Widget? icon;
@@ -2491,226 +2512,6 @@ class RdoMenuButton<T> extends StatelessWidget {
               onChanged?.call(value);
             }
           : null,
-    );
-  }
-}
-
-class _DraggableShowHide extends StatefulWidget {
-  final String id;
-  final SessionID sessionId;
-  final RxDouble fractionX;
-  final RxBool dragging;
-  final ToolbarState toolbarState;
-  final BorderRadius borderRadius;
-  // Optional width constraint to restrict horizontal movement within toolbar.
-  final double? limitWidth;
-
-  final Function(bool) setFullscreen;
-  final Function() setMinimize;
-
-  const _DraggableShowHide({
-    Key? key,
-    required this.id,
-    required this.sessionId,
-    required this.fractionX,
-    required this.dragging,
-    required this.toolbarState,
-    required this.setFullscreen,
-    required this.setMinimize,
-    required this.borderRadius,
-    this.limitWidth,
-  }) : super(key: key);
-
-  @override
-  State<_DraggableShowHide> createState() => _DraggableShowHideState();
-}
-
-class _DraggableShowHideState extends State<_DraggableShowHide> {
-  Offset position = Offset.zero;
-  Size size = Size.zero;
-  double left = 0.0;
-  double right = 1.0;
-
-  RxBool get show => widget.toolbarState.show;
-
-  @override
-  initState() {
-    super.initState();
-
-    final confLeft = double.tryParse(
-        bind.mainGetLocalOption(key: kOptionRemoteMenubarDragLeft));
-    if (confLeft == null) {
-      bind.mainSetLocalOption(
-          key: kOptionRemoteMenubarDragLeft, value: left.toString());
-    } else {
-      left = confLeft;
-    }
-    final confRight = double.tryParse(
-        bind.mainGetLocalOption(key: kOptionRemoteMenubarDragRight));
-    if (confRight == null) {
-      bind.mainSetLocalOption(
-          key: kOptionRemoteMenubarDragRight, value: right.toString());
-    } else {
-      right = confRight;
-    }
-  }
-
-  Widget _buildDraggable(BuildContext context) {
-    return Draggable(
-      axis: Axis.horizontal,
-      child: Icon(
-        Icons.drag_indicator,
-        size: 20,
-        color: MyTheme.color(context).drag_indicator,
-      ),
-      feedback: widget,
-      onDragStarted: (() {
-        final RenderObject? renderObj = context.findRenderObject();
-        if (renderObj != null) {
-          final RenderBox renderBox = renderObj as RenderBox;
-          size = renderBox.size;
-          position = renderBox.localToGlobal(Offset.zero);
-        }
-        widget.dragging.value = true;
-      }),
-      onDragEnd: (details) {
-        final mediaSize = MediaQueryData.fromView(View.of(context)).size;
-        final containerWidth = (widget.limitWidth == null || widget.limitWidth! <= 0)
-            ? mediaSize.width
-            : widget.limitWidth!;
-        final denom = (containerWidth - size.width);
-        if (denom != 0) {
-          widget.fractionX.value += (details.offset.dx - position.dx) / denom;
-        }
-        if (widget.fractionX.value < left) {
-          widget.fractionX.value = left;
-        }
-        if (widget.fractionX.value > right) {
-          widget.fractionX.value = right;
-        }
-        bind.sessionPeerOption(
-          sessionId: widget.sessionId,
-          name: 'remote-menubar-drag-x',
-          value: widget.fractionX.value.toString(),
-        );
-        widget.dragging.value = false;
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ButtonStyle buttonStyle = ButtonStyle(
-      minimumSize: MaterialStateProperty.all(const Size(0, 0)),
-      padding: MaterialStateProperty.all(EdgeInsets.zero),
-    );
-    final isFullscreen = stateGlobal.fullscreen;
-    const double iconSize = 20;
-
-    buttonWrapper(VoidCallback? onPressed, Widget child,
-        {Color hoverColor = _ToolbarTheme.blueColor}) {
-      final bgColor = buttonStyle.backgroundColor?.resolve({});
-      return TextButton(
-        onPressed: onPressed,
-        child: child,
-        style: buttonStyle.copyWith(
-          backgroundColor: MaterialStateProperty.resolveWith((states) {
-            if (states.contains(MaterialState.hovered)) {
-              return (bgColor ?? hoverColor).withOpacity(0.15);
-            }
-            return bgColor;
-          }),
-        ),
-      );
-    }
-
-    final child = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _buildDraggable(context),
-        Obx(() => buttonWrapper(
-              () {
-                widget.setFullscreen(!isFullscreen.value);
-              },
-              Tooltip(
-                message: translate(
-                    isFullscreen.isTrue ? 'Exit Fullscreen' : 'Fullscreen'),
-                child: Icon(
-                  isFullscreen.isTrue
-                      ? Icons.fullscreen_exit
-                      : Icons.fullscreen,
-                  size: iconSize,
-                ),
-              ),
-            )),
-        if (!isMacOS && !isWebDesktop)
-          Obx(() => Offstage(
-                offstage: isFullscreen.isFalse,
-                child: buttonWrapper(
-                  widget.setMinimize,
-                  Tooltip(
-                    message: translate('Minimize'),
-                    child: Icon(
-                      Icons.remove,
-                      size: iconSize,
-                    ),
-                  ),
-                ),
-              )),
-        buttonWrapper(
-          () => setState(() {
-            widget.toolbarState.switchShow(widget.sessionId);
-          }),
-          Obx((() => Tooltip(
-                message:
-                    translate(show.isTrue ? 'Hide Toolbar' : 'Show Toolbar'),
-                child: Icon(
-                  show.isTrue ? Icons.expand_less : Icons.expand_more,
-                  size: iconSize,
-                ),
-              ))),
-        ),
-        if (isWebDesktop)
-          Obx(() {
-            if (show.isTrue) {
-              return Offstage();
-            } else {
-              return buttonWrapper(
-                () => closeConnection(id: widget.id),
-                Tooltip(
-                  message: translate('Close'),
-                  child: Icon(
-                    Icons.close,
-                    size: iconSize,
-                    color: _ToolbarTheme.redColor,
-                  ),
-                ),
-                hoverColor: _ToolbarTheme.redColor,
-              ).paddingOnly(left: iconSize / 2);
-            }
-          })
-      ],
-    );
-    return TextButtonTheme(
-      data: TextButtonThemeData(style: buttonStyle),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context)
-              .menuBarTheme
-              .style
-              ?.backgroundColor
-              ?.resolve(MaterialState.values.toSet()),
-          border: Border.all(
-            color: _ToolbarTheme.borderColor(context),
-            width: 1,
-          ),
-          borderRadius: widget.borderRadius,
-        ),
-        child: SizedBox(
-          height: 20,
-          child: child,
-        ),
-      ),
     );
   }
 }
