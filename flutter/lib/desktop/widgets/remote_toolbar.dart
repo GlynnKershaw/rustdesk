@@ -228,12 +228,13 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   // Track toolbar content width so the draggable handle can be constrained
   // to slide only along the toolbar bar instead of the full window width.
   final GlobalKey _toolbarRowKey = GlobalKey();
-  double? _toolbarContentWidth;
   late Debouncer<int> _debouncerHide;
   bool _isCursorOverImage = false;
   // Track if pointer is dwelling in the top-edge hot zone centered on screen.
   bool _inHotZone = false;
+  bool _toolbarHover = false;
   Timer? _hotZoneTimer;
+  Timer? _hideToolbarTimer;
 
   int get windowId => stateGlobal.windowId;
 
@@ -284,9 +285,36 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     }
   }
 
+  void _scheduleShowToolbar() {
+    if (pin) return;
+    _hotZoneTimer?.cancel();
+    _hotZoneTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      if (_inHotZone) {
+        widget.state.show.value = true;
+      }
+    });
+  }
+
+  void _scheduleHideToolbar() {
+    if (pin) return;
+    if (_toolbarHover || _inHotZone) {
+      _hideToolbarTimer?.cancel();
+      return;
+    }
+    _hideToolbarTimer?.cancel();
+    _hideToolbarTimer = Timer(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      if (!_toolbarHover && !_inHotZone) {
+        widget.state.show.value = false;
+      }
+    });
+  }
+
   @override
   dispose() {
     _hotZoneTimer?.cancel();
+    _hideToolbarTimer?.cancel();
     super.dispose();
 
     widget.onEnterOrLeaveImageCleaner(identityHashCode(this));
@@ -295,11 +323,10 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   @override
   Widget build(BuildContext context) {
     final mediaSize = MediaQueryData.fromView(View.of(context)).size;
-    final width = (_toolbarContentWidth == null || _toolbarContentWidth! <= 0)
-        ? mediaSize.width
-        : _toolbarContentWidth!;
-    const double _hotZoneHeight = 32.0; // Approx Windows RDP bar height
-    final double _hotZoneWidth = math.min(width, 400.0); // small centered band
+    const double _hotZoneHeight = 50.0;
+    const double _desiredHotZoneWidth = 100.0;
+    final double _hotZoneWidth =
+        math.min(_desiredHotZoneWidth, mediaSize.width); // centered band
     if (show.isTrue) {
       // Restart auto-hide countdown whenever the toolbar is visible.
       triggerAutoHide();
@@ -310,35 +337,25 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         alignment: Alignment.topCenter,
         children: [
           // Transparent hot zone centered at top edge. Hovering it reveals the handle.
-          Center(
-            child: SizedBox(
-              width: _hotZoneWidth,
-              height: _hotZoneHeight,
-              child: MouseRegion(
-                opaque: false,
-                onEnter: (_) {
-                  _inHotZone = true;
-                  // Auto expand toolbar after a brief dwell in the hot zone.
-                  _hotZoneTimer?.cancel();
-                  _hotZoneTimer =
-                      Timer(const Duration(milliseconds: 600), () {
-                    if (!mounted) return;
-                    if (_inHotZone) {
-                      widget.state.show.value = true;
-                    }
-                  });
-                },
-                onHover: (_) {
-                  // Keep dwelling; no immediate reveal
-                },
-                onExit: (_) {
-                  _inHotZone = false;
-                  _hotZoneTimer?.cancel();
-                  // Start auto-hide timer when leaving the hot zone.
-                  triggerAutoHide();
-                },
-                child: const SizedBox.shrink(),
-              ),
+          // Transparent hot zone centered at top edge. Hovering it reveals the handle.
+          SizedBox(
+            width: _hotZoneWidth,
+            height: _hotZoneHeight,
+            child: MouseRegion(
+              opaque: false,
+              onEnter: (_) {
+                _inHotZone = true;
+                _scheduleShowToolbar();
+              },
+              onHover: (_) {
+                // Keep dwelling; no immediate reveal
+              },
+              onExit: (_) {
+                _inHotZone = false;
+                _hotZoneTimer?.cancel();
+                _scheduleHideToolbar();
+              },
+              child: const SizedBox.shrink(),
             ),
           ),
           Obx(() => show.value ? _buildToolbar(context) : const SizedBox()),
@@ -407,7 +424,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         }
       }
     });
-    return Column(
+    final toolbar = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Material(
@@ -421,25 +438,37 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
               ?.resolve(MaterialState.values.toSet()),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child: Theme(
-              data: themeData(),
-              child: _ToolbarTheme.borderWrapper(
-                  context,
-                  KeyedSubtree(
-                    key: _toolbarRowKey,
-                    child: Row(
-                      children: [
-                        SizedBox(width: _ToolbarTheme.buttonHMargin * 2),
-                        ...toolbarItems,
-                        SizedBox(width: _ToolbarTheme.buttonHMargin * 2)
-                      ],
-                    ),
-                  ),
-                  toolbarBorderRadius),
-            ),
+                child: Theme(
+                  data: themeData(),
+                  child: _ToolbarTheme.borderWrapper(
+                      context,
+                      KeyedSubtree(
+                        key: _toolbarRowKey,
+                        child: Row(
+                          children: [
+                            SizedBox(width: _ToolbarTheme.buttonHMargin * 2),
+                            ...toolbarItems,
+                            SizedBox(width: _ToolbarTheme.buttonHMargin * 2)
+                          ],
+                        ),
+                      ),
+                      toolbarBorderRadius),
+                ),
           ),
         ),
       ],
+    );
+
+    return MouseRegion(
+      onEnter: (_) {
+        _toolbarHover = true;
+        _hideToolbarTimer?.cancel();
+      },
+      onExit: (_) {
+        _toolbarHover = false;
+        _scheduleHideToolbar();
+      },
+      child: toolbar,
     );
   }
 
