@@ -278,7 +278,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   }
 
   _debouncerHideProc(int v) {
-    if (!pin && _isCursorOverImage && !_inHotZone) {
+    if (!pin && _isCursorOverImage && !_inHotZone && !_toolbarHover) {
       // Hide the expanded toolbar if shown.
       if (show.isTrue) {
         show.value = false;
@@ -289,7 +289,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   void _scheduleShowToolbar() {
     if (pin) return;
     _hotZoneTimer?.cancel();
-    _hotZoneTimer = Timer(const Duration(seconds: 3), () {
+    _hotZoneTimer = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
       if (_inHotZone) {
         widget.state.show.value = true;
