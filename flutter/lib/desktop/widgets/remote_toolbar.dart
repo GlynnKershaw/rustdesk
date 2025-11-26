@@ -325,7 +325,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   Widget build(BuildContext context) {
     final mediaSize = MediaQueryData.fromView(View.of(context)).size;
     const double _hotZoneHeight = 50.0;
-    const double _desiredHotZoneWidth = 100.0;
+    const double _desiredHotZoneWidth = 400.0;
     final double _hotZoneWidth =
         math.min(_desiredHotZoneWidth, mediaSize.width); // centered band
     if (show.isTrue) {
