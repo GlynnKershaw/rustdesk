@@ -235,6 +235,7 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
   bool _toolbarHover = false;
   Timer? _hotZoneTimer;
   Timer? _hideToolbarTimer;
+  double? _toolbarContentWidth;
 
   int get windowId => stateGlobal.windowId;
 
