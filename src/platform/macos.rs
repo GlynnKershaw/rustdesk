@@ -750,7 +750,7 @@ pub fn update_me() -> ResultType<()> {
             r#"
 do shell script "
 pgrep -x 'RustDesk' | grep -v {} | xargs kill -9 && rm -rf /Applications/RustDesk.app && ditto '{}' /Applications/RustDesk.app && chown -R {}:staff /Applications/RustDesk.app && xattr -r -d com.apple.quarantine /Applications/RustDesk.app
-" with prompt "RustDesk wants to update itself" with administrator privileges
+" with prompt "RemoteConnect wants to update itself" with administrator privileges
     "#,
             std::process::id(),
             app_dir,

@@ -1,6 +1,7 @@
 #!/bin/sh
 
-cd "$HOME"/rustdesk || exit 1
+# Prefer renamed project directory but fall back to legacy path if needed
+cd "$HOME"/RemoteConnect 2>/dev/null || cd "$HOME"/rustdesk || exit 1
 # shellcheck source=/dev/null
 . "$HOME"/.cargo/env
 
