@@ -5,7 +5,7 @@ authors = ["Glynn Kershaw <mail@glynnkershaw.me>"]
 edition = "2021"
 build= "build.rs"
 description = "RemoteConnect"
-default-run = "remoteconnect"
+default-run = "RemoteConnect"
 rust-version = "1.75"
 
 [lib]
